@@ -11,7 +11,42 @@ class Program
     {
         Logger.Info("Enter Connection URL. Leave empty for default.");
         var inputUrl = Console.ReadLine();
-        var url = new Uri(inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost:6798" : inputUrl);
+
+        Logger.Info("Enter Username. Leave empty for default.");
+        var userName = Console.ReadLine();
+        userName = userName.Length > 0 ? userName : "Admin";
+        Logger.Info("Enter Password. Leave empty for default.");
+        var password = Console.ReadLine();
+        password = password?.Length > 0 ? password : "password";
+
+        var login = new
+        {
+            name = userName,
+            password
+        };
+        string json = JsonSerializer.Serialize(login);
+        StringContent content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var httpClient = new HttpClient();
+        var result = await httpClient.PostAsync("http://localhost:5213/api/login", content);
+
+        var sessionId = "";
+        foreach (var header in result.Headers)
+        {
+            if (header.Key.ToLower() == "set-cookie")
+            {
+                sessionId = string.Join("", header.Value).Substring(10, 36);
+                Logger.Info($"{sessionId}");
+            }
+        }
+
+        if (sessionId == null || sessionId.Length <= 0)
+        {
+            Logger.Error("No SessionId. Exiting...");
+            return;
+        }
+
+        var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost:6798" : inputUrl) + "?sessionId=" + sessionId);
 
         using (client = new ClientWebSocket())
         {
