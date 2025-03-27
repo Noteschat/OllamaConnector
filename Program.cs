@@ -28,7 +28,7 @@ class Program
         StringContent content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var httpClient = new HttpClient();
-        var result = await httpClient.PostAsync("http://localhost:5213/api/login", content);
+        var result = await httpClient.PostAsync("http://localhost/api/identity/login", content);
 
         var sessionId = "";
         foreach (var header in result.Headers)
@@ -46,7 +46,7 @@ class Program
             return;
         }
 
-        var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost:6798" : inputUrl) + "?sessionId=" + sessionId);
+        var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost/api/chatrouter" : inputUrl) + "?sessionId=" + sessionId);
 
         using (client = new ClientWebSocket())
         {
@@ -147,7 +147,7 @@ class Program
 
         Logger.Info(payload);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost:11434/api/chat")
+        var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/ai/chat")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
