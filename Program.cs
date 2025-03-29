@@ -14,7 +14,7 @@ class Program
 
         Logger.Info("Enter Username. Leave empty for default.");
         var userName = Console.ReadLine();
-        userName = userName.Length > 0 ? userName : "Admin";
+        userName = userName.Length > 0 ? userName : "Ollama";
         Logger.Info("Enter Password. Leave empty for default.");
         var password = Console.ReadLine();
         password = password?.Length > 0 ? password : "password";
@@ -94,8 +94,9 @@ class Program
         var result = await client.ReceiveAsync(new ArraySegment<byte>(receiveBuffer), CancellationToken.None);
         var receivedMessage = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
         string[] split = receivedMessage.Split("\n");
-        var message = string.Join("\n",split, 1, split.Length - 1);
+        var message = string.Join("\n",split, 2, split.Length - 2);
         Logger.Info($"MSG-ID: {split[0]}");
+        Logger.Info($"MSG-VS: {split[1]}");
         Logger.Message(message);
         await SendToOllama(message);
     }
@@ -107,11 +108,10 @@ class Program
             Logger.Warn("Not Sending Empty Message");
             return;
         }
-        var content = $"{message.messageId}\n{message.content}";
-        Logger.Info($"Sending message {content}");
+        var content = $"{message.messageId}\n{message.version}\n{message.content}";
+        Logger.Info($"Sending message\n{content}");
         try
         {
-
             var buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(content));
             Logger.Info("Converted Message.");
             await client.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
@@ -163,6 +163,7 @@ class Program
                 {
                     bool done = false;
                     Guid messageId = Guid.NewGuid();
+                    int version = 0;
                     while (!reader.EndOfStream && !done)
                     {
                         var line = await reader.ReadLineAsync();
@@ -174,8 +175,11 @@ class Program
                         queue.Add(new Message()
                         {
                             content = oRes.message.content,
-                            messageId = messageId.ToString()
+                            messageId = messageId.ToString(),
+                            version = version,
                         });
+
+                        version++;
 
                         Logger.Info(oRes.message.content);
                     }
@@ -196,25 +200,34 @@ class Program
             queue.CopyTo(lines);
             queue.Clear();
 
-            Dictionary<string, string> messages = new Dictionary<string, string>();
+            Dictionary<string, VersionedContent> messages = new Dictionary<string, VersionedContent>();
             foreach (Message line in lines)
             {
                 if (messages.ContainsKey(line.messageId))
                 {
-                    messages[line.messageId] += line.content;
+                    messages[line.messageId] = new VersionedContent()
+                    {
+                        content = messages[line.messageId].content + line.content,
+                        version = messages[line.messageId].version,
+                    };
                 }
                 else
                 {
-                    messages.Add(line.messageId, line.content);
+                    messages.Add(line.messageId, new VersionedContent()
+                    {
+                        content = line.content,
+                        version = line.version,
+                    });
                 }
             }
 
             List<Task> tasks = new List<Task>();
-            foreach (KeyValuePair<string, string> message in messages)
+            foreach (KeyValuePair<string, VersionedContent> message in messages)
             {
                 tasks.Add(SendMessage(new Message()
                 {
-                    content = message.Value,
+                    content = message.Value.content,
+                    version = message.Value.version,
                     messageId = message.Key
                 }));
             }
@@ -262,5 +275,12 @@ class Program
     {
         public string messageId { set; get; }
         public string content { get; set; }
+        public int version { get; set; }
+    }
+
+    struct VersionedContent
+    {
+        public string content { get; set; }
+        public int version { get; set; }
     }
 }
