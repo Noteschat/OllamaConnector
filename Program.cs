@@ -5,19 +5,24 @@ using System.Text.Json;
 class Program
 {
     static ClientWebSocket client;
-    static List<Message> queue = new List<Message>();
+    static List<ServerMessage> queue = new List<ServerMessage>();
+    static string sessionId = "";
+    static User currentUser;
 
     static async Task Main()
     {
         Logger.Info("Enter Connection URL. Leave empty for default.");
         var inputUrl = Console.ReadLine();
+        Logger.Clear();
 
         Logger.Info("Enter Username. Leave empty for default.");
         var userName = Console.ReadLine();
         userName = userName.Length > 0 ? userName : "Ollama";
+        Logger.Clear();
         Logger.Info("Enter Password. Leave empty for default.");
         var password = Console.ReadLine();
         password = password?.Length > 0 ? password : "password";
+        Logger.Clear();
 
         var login = new
         {
@@ -28,9 +33,10 @@ class Program
         StringContent content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var httpClient = new HttpClient();
+        Logger.Info("Getting Session...");
         var result = await httpClient.PostAsync("http://localhost/api/identity/login", content);
 
-        var sessionId = "";
+        sessionId = "";
         foreach (var header in result.Headers)
         {
             if (header.Key.ToLower() == "set-cookie")
@@ -46,6 +52,19 @@ class Program
             return;
         }
 
+        httpClient.DefaultRequestHeaders.Add("Cookie", "sessionId=" + sessionId);
+        Logger.Info("Getting User info...");
+        var validResult = await httpClient.GetAsync("http://localhost/api/identity/login/valid");
+        if (validResult.IsSuccessStatusCode)
+        {
+            currentUser = JsonSerializer.Deserialize<User>(await validResult.Content.ReadAsStringAsync());
+        }
+        else
+        {
+            Logger.Error("Invalid User");
+            return;
+        }
+
         var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost/api/chatrouter" : inputUrl) + "?sessionId=" + sessionId);
 
         while (true)
@@ -57,6 +76,7 @@ class Program
                 {
                     Logger.Info("Trying to establish connection...");
                     await client.ConnectAsync(url, CancellationToken.None);
+                    Logger.Clear();
                     Logger.Info("WebSocket connection established.");
 
                     Task[] tasks = {
@@ -100,30 +120,23 @@ class Program
     {
         var receiveBuffer = new byte[65535];
         var result = await client.ReceiveAsync(new ArraySegment<byte>(receiveBuffer), CancellationToken.None);
-        var receivedMessage = Encoding.UTF8.GetString(receiveBuffer, 0, result.Count);
-        string[] split = receivedMessage.Split("\n");
-        var message = string.Join("\n",split, 2, split.Length - 2);
-        Logger.Info($"MSG-ID: {split[0]}");
-        Logger.Info($"MSG-VS: {split[1]}");
-        Logger.Message(message);
+        var message = JsonSerializer.Deserialize<ServerMessage>(Encoding.UTF8.GetString(receiveBuffer, 0, result.Count));
+        Logger.Info("Received Message");
         await SendToOllama(message);
     }
 
-    static async Task SendMessage(Message message)
+    static async Task SendMessage(ServerMessage message)
     {
         if(message.content.Length <= 0)
         {
             Logger.Warn("Not Sending Empty Message");
             return;
         }
-        var content = $"{message.messageId}\n{message.version}\n{message.content}";
-        Logger.Info($"Sending message\n{content}");
+        var content = JsonSerializer.Serialize(message);
         try
         {
             var buffer = new ArraySegment<byte>(Encoding.UTF8.GetBytes(content));
-            Logger.Info("Converted Message.");
             await client.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);
-            Logger.Info("Sent Message.");
         }
         catch (Exception e)
         {
@@ -131,9 +144,42 @@ class Program
         }
     }
 
-    static async Task SendToOllama(string message)
+    static async Task SendToOllama(ServerMessage message)
     {
-        var httpClient = new HttpClient();
+        var storageClient = new HttpClient();
+        storageClient.DefaultRequestHeaders.Add("Cookie", "sessionId=" + sessionId);
+        var storageMessagesResponse = await storageClient.GetAsync("http://localhost/api/chat/storage/" + message.chatId);
+        var messages = new List<OllamaMessage>();
+        if (storageMessagesResponse.IsSuccessStatusCode)
+        {
+            var storageMessages = JsonSerializer.Deserialize<StorageAllMessagesResponse>(await storageMessagesResponse.Content.ReadAsStringAsync()).messages;
+            foreach (StorageMessage storageMessage in storageMessages)
+            {
+                if (storageMessage.messageId != message.messageId)
+                {
+                    messages.Add(new OllamaMessage()
+                    {
+                        content = storageMessage.content,
+                        role = currentUser.Id == storageMessage.userId ? "assistant" : "user"
+                    });
+                }
+            }
+        }
+        else
+        {
+            Logger.Warn("Answering without context.");
+        }
+
+        messages.Add(new OllamaMessage
+        {
+            role = "user",
+            content = message.content
+        });
+
+        var httpClient = new HttpClient()
+        {
+            Timeout = TimeSpan.FromMinutes(60)
+        };
         var payloadObj = new OllamaPayload
         {
             model = "deepseek-r1:7B",
@@ -142,18 +188,12 @@ class Program
                 temperature = 1.0
             },
             stream = true,
-            messages = new OllamaMessage[1]{
-                new OllamaMessage
-                {
-                    role = "user",
-                    content = message
-                }
-            }
+            messages = messages.ToArray()
         };
 
         var payload = JsonSerializer.Serialize(payloadObj);
 
-        Logger.Info(payload);
+        Logger.Info($"Sending {payloadObj.messages.Length} messages to Ollama...");
 
         var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/ai/chat")
         {
@@ -165,6 +205,7 @@ class Program
             using (var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
             {
                 response.EnsureSuccessStatusCode();
+                Logger.Info("Getting Response");
 
                 using (var stream = await response.Content.ReadAsStreamAsync())
                 using (var reader = new StreamReader(stream, Encoding.UTF8))
@@ -180,16 +221,16 @@ class Program
                         var oRes = JsonSerializer.Deserialize<OllamaResponse>(line);
                         done = oRes.done;
 
-                        queue.Add(new Message()
+                        queue.Add(new ServerMessage()
                         {
                             content = oRes.message.content,
                             messageId = messageId.ToString(),
                             version = version,
+                            chatId = message.chatId,
+                            userId = currentUser.Id
                         });
 
                         version++;
-
-                        Logger.Info(oRes.message.content);
                     }
                 }
             }
@@ -204,40 +245,41 @@ class Program
     {
         if(queue.Count > 0)
         {
-            Message[] lines = new Message[queue.Count];
+            ServerMessage[] lines = new ServerMessage[queue.Count];
             queue.CopyTo(lines);
             queue.Clear();
 
-            Dictionary<string, VersionedContent> messages = new Dictionary<string, VersionedContent>();
-            foreach (Message line in lines)
+            Dictionary<string, ServerMessage> messages = new Dictionary<string, ServerMessage>();
+            foreach (ServerMessage line in lines)
             {
                 if (messages.ContainsKey(line.messageId))
                 {
-                    messages[line.messageId] = new VersionedContent()
+                    messages[line.messageId] = new ServerMessage()
                     {
                         content = messages[line.messageId].content + line.content,
                         version = messages[line.messageId].version,
+                        userId = messages[line.messageId].userId,
+                        chatId = messages[line.messageId].chatId,
+                        messageId = line.messageId,
                     };
                 }
                 else
                 {
-                    messages.Add(line.messageId, new VersionedContent()
+                    messages.Add(line.messageId, new ServerMessage()
                     {
                         content = line.content,
                         version = line.version,
+                        userId = line.userId,
+                        chatId = line.chatId,
+                        messageId = line.messageId,
                     });
                 }
             }
 
             List<Task> tasks = new List<Task>();
-            foreach (KeyValuePair<string, VersionedContent> message in messages)
+            foreach (KeyValuePair<string, ServerMessage> message in messages)
             {
-                tasks.Add(SendMessage(new Message()
-                {
-                    content = message.Value.content,
-                    version = message.Value.version,
-                    messageId = message.Key
-                }));
+                tasks.Add(SendMessage(message.Value));
             }
             Task.WaitAll(tasks.ToArray());
         }
@@ -290,5 +332,19 @@ class Program
     {
         public string content { get; set; }
         public int version { get; set; }
+    }
+
+    struct StorageAllMessagesResponse
+    {
+        public string id { set; get; }
+        public List<StorageMessage> messages { get; set; }
+    }
+
+    struct StorageMessage
+    {
+        public string messageId { set; get; }
+        public string content { get; set; }
+        public int version { get; set; }
+        public string userId { get; set; }
     }
 }

@@ -34,4 +34,9 @@
         Console.WriteLine($"MESSAGE | {message}");
         Console.ForegroundColor = ConsoleColor.White;
     }
+
+    public static void Clear()
+    {
+        Console.Clear();
+    }
 }
