@@ -82,7 +82,10 @@ class Program
             catch (Exception ex)
             {
                 Logger.Error(ex.Message);
-                await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                if (client.State == WebSocketState.Open)
+                {
+                    await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                }
                 client.Dispose();
             }
         }
