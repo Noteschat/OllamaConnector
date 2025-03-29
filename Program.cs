@@ -48,16 +48,18 @@ class Program
 
         var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost/api/chatrouter" : inputUrl) + "?sessionId=" + sessionId);
 
-        using (client = new ClientWebSocket())
+        while (true)
         {
-            client.Options.KeepAliveInterval = TimeSpan.FromHours(2);
-            try
+            using (client = new ClientWebSocket())
             {
-                Logger.Info("Trying to establish connection...");
-                await client.ConnectAsync(url, CancellationToken.None);
-                Logger.Info("WebSocket connection established.");
+                client.Options.KeepAliveInterval = TimeSpan.FromHours(2);
+                try
+                {
+                    Logger.Info("Trying to establish connection...");
+                    await client.ConnectAsync(url, CancellationToken.None);
+                    Logger.Info("WebSocket connection established.");
 
-                Task[] tasks = {
+                    Task[] tasks = {
                     Task.Run(async () =>
                     {
                         while (client.State == WebSocketState.Open)
@@ -76,17 +78,20 @@ class Program
                     })
                 };
 
-                Task.WaitAll(tasks);
+                    Task.WaitAll(tasks);
 
-            }
-            catch (Exception ex)
-            {
-                Logger.Error(ex.Message);
-                if (client.State == WebSocketState.Open)
-                {
-                    await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
                 }
-                client.Dispose();
+                catch (Exception ex)
+                {
+                    Logger.Error(ex.Message);
+                    if (client.State == WebSocketState.Open)
+                    {
+                        await client.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                    }
+                    client.Dispose();
+
+                    Logger.Info("Trying to reconnect...");
+                }
             }
         }
     }
