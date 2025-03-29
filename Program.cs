@@ -337,6 +337,7 @@ class Program
     struct StorageAllMessagesResponse
     {
         public string id { set; get; }
+        public string name { set; get; }
         public List<StorageMessage> messages { get; set; }
     }
 
