@@ -1,4 +1,6 @@
-﻿using System.Net.WebSockets;
+﻿using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
@@ -67,7 +69,8 @@ class Program
 
         var url = new Uri((inputUrl == null || inputUrl.Length <= 0 ? "ws://localhost/api/chatrouter" : inputUrl) + "?sessionId=" + sessionId);
 
-        while (true)
+        var retries = 0;
+        while (retries < 5)
         {
             using (client = new ClientWebSocket())
             {
@@ -78,25 +81,55 @@ class Program
                     await client.ConnectAsync(url, CancellationToken.None);
                     Logger.Clear();
                     Logger.Info("WebSocket connection established.");
+                    retries = 0;
 
                     Task[] tasks = {
-                    Task.Run(async () =>
-                    {
-                        while (client.State == WebSocketState.Open)
+                        Task.Run(async () =>
                         {
-                            await ReadMessage();
-                        }
-                        Logger.Warn("Done Reading");
-                    }),
-                    Task.Run(async () =>
-                    {
-                        while(client.State == WebSocketState.Open)
+                            while (client.State == WebSocketState.Open)
+                            {
+                                await ReadMessage();
+                            }
+                            Logger.Warn("Done Reading");
+                        }),
+                        Task.Run(async () =>
                         {
-                            await HandleQueue();
-                        }
-                        Logger.Warn("Done Handling");
-                    })
-                };
+                            while(client.State == WebSocketState.Open)
+                            {
+                                await HandleQueue();
+                            }
+                            Logger.Warn("Done Handling");
+                        }),
+                        Task.Run(async () =>
+                        {
+                            try {
+                                var ipAddress = IPAddress.Any;
+                                var port = 5300;
+
+                                var endPoint = new IPEndPoint(ipAddress, port);
+                                TcpListener serverSocket = new TcpListener(endPoint);
+                                serverSocket.Start();
+
+                                while(client.State == WebSocketState.Open) {
+                                    var socket = serverSocket.AcceptTcpClient();
+                                    var stream = socket.GetStream();
+
+                                    var responseString = $"HTTP/1.1 200 Ok\r\n" +
+                                                         $"Content-Length: 0\r\n\r\n";
+                                    var responseBytes = Encoding.UTF8.GetBytes(responseString);
+
+                                    stream.Write(responseBytes, 0, responseBytes.Length);
+                                }
+
+                                serverSocket.Stop();
+                                serverSocket.Dispose();
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Warn($"Done Listening: {ex.Message}");
+                            }
+                        })
+                    };
 
                     Task.WaitAll(tasks);
 
@@ -111,6 +144,7 @@ class Program
                     client.Dispose();
 
                     Logger.Info("Trying to reconnect...");
+                    retries++;
                 }
             }
         }
