@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 class Program
 {
@@ -10,6 +11,7 @@ class Program
     static List<ServerMessage> queue = new List<ServerMessage>();
     static string sessionId = "";
     static User currentUser;
+    static string model = "deepseek-r1:7B";
 
     static async Task Main()
     {
@@ -216,7 +218,7 @@ class Program
         };
         var payloadObj = new OllamaPayload
         {
-            model = "deepseek-r1:7B",
+            model = model,
             options = new OllamaOptions
             {
                 temperature = 1.0
@@ -372,6 +374,8 @@ class Program
     {
         public string id { set; get; }
         public string name { set; get; }
+        [JsonPropertyName("users")]
+        public string[] Users { get; set; }
         public List<StorageMessage> messages { get; set; }
     }
 
