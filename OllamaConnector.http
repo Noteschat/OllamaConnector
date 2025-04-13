@@ -1,0 +1,6 @@
+@OllamaConnector_HostAddress = http://localhost:5241
+
+GET {{OllamaConnector_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
