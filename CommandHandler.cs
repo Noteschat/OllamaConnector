@@ -44,8 +44,6 @@ namespace OllamaConnector
                 return;
             }
 
-            Logger.Clear();
-
             while(running)
             {
                 var command = Console.ReadLine();

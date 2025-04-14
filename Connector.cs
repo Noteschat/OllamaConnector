@@ -72,7 +72,6 @@ public class Connector
                 {
                     Logger.Info("Trying to establish connection...");
                     await client.ConnectAsync(url, CancellationToken.None);
-                    Logger.Clear();
                     Logger.Info("WebSocket connection established.");
                     retries = 0;
 
