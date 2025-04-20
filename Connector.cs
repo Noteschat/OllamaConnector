@@ -172,7 +172,13 @@ public class Connector
         var messages = new List<OllamaMessage>();
         if (storageMessagesResponse.IsSuccessStatusCode)
         {
-            var storageMessages = JsonSerializer.Deserialize<StorageAllMessagesResponse>(await storageMessagesResponse.Content.ReadAsStringAsync()).messages;
+            var chat = JsonSerializer.Deserialize<StorageAllMessagesResponse>(await storageMessagesResponse.Content.ReadAsStringAsync());
+            var storageMessages = chat.messages;
+            if (!chat.users.Contains(currentUser.Id))
+            {
+                Logger.Warn("Received message for wrong User!");
+                return;
+            }
             foreach (StorageMessage storageMessage in storageMessages)
             {
                 if (storageMessage.messageId != message.messageId)
