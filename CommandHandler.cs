@@ -35,8 +35,6 @@ namespace OllamaConnector
                 var res = JsonSerializer.Deserialize<Registration>(await registerRes.Content.ReadAsStringAsync());
                 Authentication.registeredRegistrationId = res.id;
                 Logger.Info("Registration-Id: |" + res.id + "|");
-                Logger.Info("Accepted? (Press Enter if accepted)");
-                Console.ReadLine();
             }
             catch (Exception e)
             {
