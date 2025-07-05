@@ -3,14 +3,18 @@
     public class ConnectorManager
     {
         Dictionary<string, ConnectorTask> connectors;
-        public ConnectorManager()
+        NotesManager notes;
+
+        public ConnectorManager(NotesManager notes)
         {
+            this.notes = notes;
+
             connectors = new Dictionary<string, ConnectorTask>();
         }
 
         public void CreateConnector(OllamaConfig config)
         {
-            var newConnector = new Connector(config);
+            var newConnector = new Connector(config, notes);
             Logger.Info("Got Config: " + config.ConfigId);
             connectors.Add(config.ConfigId, new ConnectorTask { connector = newConnector, task = Task.Run(newConnector.Run) });
         }

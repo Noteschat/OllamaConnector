@@ -10,11 +10,13 @@ public class Connector
     string sessionId = "";
     User currentUser;
     OllamaConfig config;
+    NotesManager notes;
     bool stopped = false;
 
-    public Connector(OllamaConfig config)
+    public Connector(OllamaConfig config, NotesManager notes)
     {
         this.config = config;
+        this.notes = notes;
     }
 
     public async Task Run()
@@ -142,7 +144,7 @@ public class Connector
         var result = await client.ReceiveAsync(new ArraySegment<byte>(receiveBuffer), CancellationToken.None);
         var message = JsonSerializer.Deserialize<ServerMessage>(Encoding.UTF8.GetString(receiveBuffer, 0, result.Count));
         Logger.Info("Received Message");
-        await SendToOllama(message);
+        await SendToOllama(message, config.UseNotes == true ? await notes.GetForChat(sessionId, message.chatId) : new List<Note>());
     }
 
     async Task SendMessage(ServerMessage message)
@@ -164,7 +166,7 @@ public class Connector
         }
     }
 
-    async Task SendToOllama(ServerMessage message)
+    async Task SendToOllama(ServerMessage message, List<Note> notes)
     {
         var storageClient = new HttpClient();
         storageClient.DefaultRequestHeaders.Add("Cookie", "sessionId=" + sessionId);
@@ -194,6 +196,16 @@ public class Connector
         else
         {
             Logger.Warn("Answering without context.");
+        }
+
+        if (config.UseNotes == true && notes.Count > 0)
+        {
+            string notesString = string.Join("\n\n", notes.Select(note => $"Title: {note.Name}\nContent:{note.Content}"));
+            messages.Add(new OllamaMessage
+            {
+                role = "system",
+                content = $"These are the users notes in this chat:\n\n{notesString}"
+            });
         }
 
         messages.Add(new OllamaMessage
@@ -398,4 +410,6 @@ public struct OllamaConfig
     public string Model { get; set; }
     [JsonPropertyName("message")]
     public string Message { get; set; }
+    [JsonPropertyName("useNotes")]
+    public bool UseNotes { get; set; }
 }
