@@ -1,6 +1,27 @@
-@OllamaConnector_HostAddress = http://localhost:5241
-
-GET {{OllamaConnector_HostAddress}}/weatherforecast/
-Accept: application/json
+@OllamaConnector_HostAddress = http://localhost
 
 ###
+GET {{OllamaConnector_HostAddress}}/api/ollamaconnector/health
+
+###
+GET {{OllamaConnector_HostAddress}}/api/ollamaconnector/callback
+Cookie: callbackId=eea5b8ee-cb7e-4d6c-9e0f-e46a47c3e7b8
+
+###
+POST {{OllamaConnector_HostAddress}}/api/ollamaconnector/callback
+Cookie: callbackId=eea5b8ee-cb7e-4d6c-9e0f-e46a47c3e7b8
+Content-Type: application/json
+
+{
+    "configId": "d9c73498-2fab-4cab-8c3b-ef5fd7cec537",
+    "configUserId": "71a98ddc-5667-4207-812c-7cfc4d3207e4",
+    "name": "Test",
+    "password": "47c1b957-9860-422b-952d-23f3642cbc98",
+    "model": "deepseek-r1:14b",
+    "message": "You are a test agent.",
+    "useNotes": true
+}
+
+###
+DELETE {{OllamaConnector_HostAddress}}/api/ollamaconnector/callback/d9c73498-2fab-4cab-8c3b-ef5fd7cec537
+Cookie: callbackId=eea5b8ee-cb7e-4d6c-9e0f-e46a47c3e7b8
