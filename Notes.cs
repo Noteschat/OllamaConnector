@@ -10,12 +10,16 @@ public struct Note
     public string Name { get; set; }
     [JsonPropertyName("content")]
     public string Content { get; set; }
+    [JsonPropertyName("tags")]
+    public List<string>? Tags { get; set; }
 }
 
 public struct AllNotesResponse
 {
     [JsonPropertyName("notes")]
     public List<AllNotesResponseNote> Notes { get; set; }
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; }
 }
 
 public struct AllNotesResponseNote
@@ -24,6 +28,8 @@ public struct AllNotesResponseNote
     public string Id { get; set; }
     [JsonPropertyName("name")]
     public string Name { get; set; }
+    [JsonPropertyName("tags")]
+    public List<string>? Tags { get; set; }
 }
 
 public struct NewNoteBody
@@ -32,6 +38,8 @@ public struct NewNoteBody
     public string Name { get; set; }
     [JsonPropertyName("content")]
     public string Content { get; set; }
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; }
 }
 
 public struct ChangeNoteBody
@@ -40,4 +48,6 @@ public struct ChangeNoteBody
     public string Name { get; set; }
     [JsonPropertyName("content")]
     public string Content { get; set; }
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; }
 }

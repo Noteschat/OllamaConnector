@@ -149,7 +149,7 @@ public class Connector
 
     async Task SendMessage(ServerMessage message)
     {
-        if(message.content.Length <= 0)
+        if (message.content.Length <= 0)
         {
             Logger.Warn("Not Sending Empty Message");
             return;
@@ -172,6 +172,7 @@ public class Connector
         storageClient.DefaultRequestHeaders.Add("Cookie", "sessionId=" + sessionId);
         var storageMessagesResponse = await storageClient.GetAsync("http://localhost/api/chat/storage/" + message.chatId);
         var messages = new List<OllamaMessage>();
+        Dictionary<string, string> idToUser = new Dictionary<string, string>();
         if (storageMessagesResponse.IsSuccessStatusCode)
         {
             var chat = JsonSerializer.Deserialize<StorageAllMessagesResponse>(await storageMessagesResponse.Content.ReadAsStringAsync());
@@ -181,14 +182,29 @@ public class Connector
                 Logger.Warn("Received message for wrong User!");
                 return;
             }
+            foreach (var userId in chat.users)
+            {
+                var userResponse = await storageClient.GetAsync("http://localhost/api/identity/user/" + userId);
+                if (userResponse.IsSuccessStatusCode)
+                {
+                    var user = JsonSerializer.Deserialize<User>(await userResponse.Content.ReadAsStringAsync());
+                    idToUser.Add(userId, user.Name);
+                }
+            }
             foreach (StorageMessage storageMessage in storageMessages)
             {
                 if (storageMessage.messageId != message.messageId)
                 {
+                    bool isAssistant = currentUser.Id == storageMessage.userId;
+                    string contentPrefix = "";
+                    if (!isAssistant && idToUser.ContainsKey(storageMessage.userId))
+                    {
+                        contentPrefix = $"\"{idToUser[storageMessage.userId]}\":\n";
+                    }
                     messages.Add(new OllamaMessage()
                     {
-                        content = storageMessage.content,
-                        role = currentUser.Id == storageMessage.userId ? "assistant" : "user"
+                        content = contentPrefix + storageMessage.content,
+                        role = isAssistant ? "assistant" : "user"
                     });
                 }
             }
@@ -200,7 +216,15 @@ public class Connector
 
         if (config.UseNotes == true && notes.Count > 0)
         {
-            string notesString = string.Join("\n\n", notes.Select(note => $"Title: {note.Name}\nContent:{note.Content}"));
+            string notesString = string.Join("\n\n", notes.Select(note =>
+            {
+                if (note.Tags != null)
+                {
+                    var tags = string.Join(" | ", note.Tags);
+                    return $"Title: {note.Name}\nTags: {tags}\nContent:{note.Content}";
+                }
+                return $"Title: {note.Name}\nTags: none\nContent:{note.Content}";
+            }));
             messages.Add(new OllamaMessage
             {
                 role = "system",
@@ -211,13 +235,24 @@ public class Connector
         messages.Add(new OllamaMessage
         {
             role = "system",
-            content = config.Message,
+            content = config.Message + "\nThe first line of any user message is the user's username.",
         });
 
+        if (!idToUser.ContainsKey(message.userId))
+        {
+            var userResponse = await storageClient.GetAsync("http://localhost/api/identity/user/" + message.userId);
+            if (userResponse.IsSuccessStatusCode)
+            {
+                var user = JsonSerializer.Deserialize<User>(await userResponse.Content.ReadAsStringAsync());
+                idToUser.Add(message.userId, user.Name);
+            }
+        }
+
+        string userContentPrefix = $"\"{idToUser[message.userId]}\":\n";
         messages.Add(new OllamaMessage
         {
             role = "user",
-            content = message.content
+            content = userContentPrefix + message.content
         });
 
         var httpClient = new HttpClient()
@@ -260,8 +295,8 @@ public class Connector
                     while (!reader.EndOfStream && !done)
                     {
                         var line = await reader.ReadLineAsync();
-                        if (line == null) continue; 
-                        
+                        if (line == null) continue;
+
                         var oRes = JsonSerializer.Deserialize<OllamaResponse>(line);
                         done = oRes.done;
 
@@ -288,7 +323,7 @@ public class Connector
 
     async Task HandleQueue()
     {
-        if(queue.Count > 0)
+        if (queue.Count > 0)
         {
             ServerMessage[] lines = new ServerMessage[queue.Count];
             queue.CopyTo(lines);
